@@ -1,0 +1,4 @@
+*.idea
+*.py[cod]
+*.ipynb_checkpoints
+temps
