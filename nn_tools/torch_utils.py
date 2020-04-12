@@ -77,7 +77,7 @@ def fit(module: torch.nn.Module, train_dataloader, valid_data_loader, optimizer,
     finally:
         module.load_state_dict(best_state_dict)
         module.train(False)
-    return best_metric_value, torch.tensor(loss_record, device=loss_record[0].divice)
+    return best_metric_value, torch.tensor(loss_record, device=loss_record[0].device)
 
 
 class NumericEmbedding(torch.nn.Module):
