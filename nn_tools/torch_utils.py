@@ -1,4 +1,7 @@
 import math
+import pickle
+import time
+import traceback
 from copy import deepcopy
 from typing import List
 
@@ -13,64 +16,91 @@ def forever_iter(iterable):
             yield _
 
 
-def evaluate(module: torch.nn.Module, dataloader, loss: list, ncols=None):
+def try_forward(module: torch.nn.Module, data):
+    # catch module.forward的错误，如果正常运行，返回module(*data)的结果，否则返回None
+    try:
+        pred = module(*data)
+        return pred
+    except KeyboardInterrupt:
+        raise KeyboardInterrupt
+    except Exception as exception:
+        error_info = traceback.format_exc()
+        if 'CUDA out of memory' in error_info:
+            raise exception
+        
+        print('an error occurs!')
+        timestamp = time.time()
+        with open('error_batch_data_{}.pkl'.format(timestamp), 'bw') as file:
+            pickle.dump(data, file)
+        with open('error_batch_traceback_{}.txt'.format(timestamp), 'w') as file:
+            file.write(error_info)
+        return None
+
+
+def evaluate(module: torch.nn.Module, data, losses: list) -> torch.Tensor:
     with torch.no_grad():
         module.eval()
-        generator = forever_iter(dataloader)
-        loss_value = [[] for _ in loss]
-        for _ in tqdm(range(len(dataloader)), ncols=ncols):
+        generator = forever_iter(data)
+        loss_value = [[] for _ in losses]
+        for _ in tqdm(range(len(data))):
             data, label = next(generator)
-            prediction = module(*data)
-            for a, b in zip(loss_value, loss):
+            prediction = try_forward(module, data)
+            if prediction is None:
+                continue
+            for a, b in zip(loss_value, losses):
                 a.append(b(*prediction, *label))
         loss_value = torch.tensor(loss_value, device=loss_value[0][0].device).mean(dim=-1)
     return loss_value
 
 
-def fit(module: torch.nn.Module, train_dataloader, valid_data_loader, optimizer, scheduler, max_step, loss: list,
-        is_higher_better, metric_loss_id=-1, early_stopping_rounds=-1, verbose=1, metric_value=None, ncols=None):
+def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, losses: list, is_higher_better,
+        evaluate_per_steps=None, early_stopping=-1, scheduler=None, metric_loss_id=-1, init_metric_value=None):
     # 状态变量
     print('using {} as training loss, using {} as early stopping metric'.format(
-        type(loss[0]).__name__, type(loss[metric_loss_id]).__name__))
+        type(losses[0]).__name__, type(losses[metric_loss_id]).__name__))
+    evaluate_per_steps = evaluate_per_steps or max_step
+
     best_state_dict = deepcopy(module.state_dict())
     best_step = -1
-    best_metric_value = metric_value
+    best_metric_value = init_metric_value
     loss_record = []
     try:
         step = 0
-        generator = forever_iter(train_dataloader)
+        generator = forever_iter(train_data)
         while step < max_step:
-            for _ in tqdm(range(verbose), ncols=ncols):
+            for _ in tqdm(range(evaluate_per_steps)):
                 step += 1
                 # --------- 训练参数 ------------
                 module.train(True)
                 data, label = next(generator)
                 optimizer.zero_grad()
-                prediction = module(*data)
-                loss_value = loss[0](*prediction, *label)
+                prediction = try_forward(module, data)
+                if prediction is None:
+                    continue
+                loss_value = losses[0](*prediction, *label)
                 loss_record.append(loss_value.detach())
                 loss_value.backward()
                 optimizer.step()
                 if scheduler:
                     scheduler.step()
-                module.train(False)
+            module.train(False)
             # ----- 计算校验集的loss和metric
-            loss_value = evaluate(module, valid_data_loader, loss, ncols)
-            metric_value = loss_value[metric_loss_id]
-            if best_metric_value is None or (metric_value != best_metric_value
-                                             and is_higher_better == (metric_value > best_metric_value)):
+            loss_value = evaluate(module, valid_data, losses)
+            init_metric_value = loss_value[metric_loss_id]
+            if best_metric_value is None or (init_metric_value != best_metric_value
+                                             and is_higher_better == (init_metric_value > best_metric_value)):
                 best_state_dict = deepcopy(module.state_dict())
                 best_step = step
-                best_metric_value = metric_value
+                best_metric_value = init_metric_value
             with torch.no_grad():
                 print('train {}: {}; valid '.format(
-                    type(loss[0]).__name__, torch.tensor(loss_record[-verbose:],
-                                                         device=loss_record[-1].device).mean()), end='')
-            for a, b in zip(loss_value, loss):
+                    type(losses[0]).__name__, torch.tensor(loss_record[-evaluate_per_steps:],
+                                                           device=loss_record[-1].device).mean()), end='')
+            for a, b in zip(loss_value, losses):
                 print('{}: {}, '.format(type(b).__name__, a), end='')
             print()
             # ------ 提前停止的策略
-            if step - best_step >= early_stopping_rounds > 0:
+            if step - best_step >= early_stopping > 0:
                 break
     except KeyboardInterrupt:
         raise KeyboardInterrupt
@@ -83,7 +113,7 @@ def fit(module: torch.nn.Module, train_dataloader, valid_data_loader, optimizer,
 class NumericEmbedding(torch.nn.Module):
     """
     参考torch.nn.Embedding文档，将数值型特征也变成相同的形状。
-    实际上就是将输入的张量扩展一个为1的维度之后，加上一个没有常数项的全连接层（和一个非线性激活层）
+    实际上就是将输入的张量扩展一个为1的维度之后，加上一个没有常数项的全连接层
     """
     def __init__(self, input_dim: List[int], emb_dim):
         super(NumericEmbedding, self).__init__()
