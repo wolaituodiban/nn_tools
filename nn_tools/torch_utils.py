@@ -40,10 +40,8 @@ def try_forward(module: torch.nn.Module, data):
 def evaluate(module: torch.nn.Module, data, losses: list) -> torch.Tensor:
     with torch.no_grad():
         module.eval()
-        generator = forever_iter(data)
         loss_value = [[] for _ in losses]
-        for _ in tqdm(range(len(data))):
-            data, label = next(generator)
+        for data, label in tqdm(data, ascii=True):
             prediction = try_forward(module, data)
             if prediction is None:
                 continue
@@ -68,7 +66,8 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
         step = 0
         generator = forever_iter(train_data)
         while step < max_step:
-            for _ in tqdm(range(evaluate_per_steps)):
+            time.sleep(.3)
+            for _ in tqdm(range(evaluate_per_steps), ascii=True):
                 step += 1
                 # --------- 训练参数 ------------
                 module.train(True)
@@ -93,9 +92,9 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                 best_step = step
                 best_metric_value = init_metric_value
             with torch.no_grad():
-                print('train {}: {}; valid '.format(
-                    type(losses[0]).__name__, torch.tensor(loss_record[-evaluate_per_steps:],
-                                                           device=loss_record[-1].device).mean()), end='')
+                print('step {} train {}: {}; valid '.format(
+                    step, type(losses[0]).__name__, torch.tensor(loss_record[-evaluate_per_steps:],
+                                                                 device=loss_record[-1].device).mean()), end='')
             for a, b in zip(loss_value, losses):
                 print('{}: {}, '.format(type(b).__name__, a), end='')
             print()
