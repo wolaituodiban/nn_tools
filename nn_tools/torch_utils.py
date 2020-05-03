@@ -66,7 +66,7 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
         step = 0
         generator = forever_iter(train_data)
         while step < max_step:
-            time.sleep(.3)
+            time.sleep(0.5)
             for _ in tqdm(range(evaluate_per_steps), ascii=True):
                 step += 1
                 # --------- 训练参数 ------------
