@@ -52,25 +52,26 @@ def evaluate(module: torch.nn.Module, data, losses: list) -> torch.Tensor:
 
 
 def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, losses: list, is_higher_better,
-        evaluate_per_steps=None, early_stopping=-1, scheduler=None, metric_loss_id=-1, init_metric_value=None):
+        evaluate_per_steps=None, early_stopping=-1, scheduler=None, metric_loss_id=-1, init_metric_value=None,
+        evaluate_fn=evaluate):
     # 状态变量
-    print('using {} as training loss, using {} as early stopping metric'.format(
-        type(losses[0]).__name__, type(losses[metric_loss_id]).__name__))
+    print('using {} as training loss, using {}({} is better) as early stopping metric'.format(
+        type(losses[0]).__name__, type(losses[metric_loss_id]).__name__, 'higher' if is_higher_better else 'lower'))
     evaluate_per_steps = evaluate_per_steps or max_step
 
     best_state_dict = deepcopy(module.state_dict())
     best_step = -1
     best_metric_value = init_metric_value
     loss_record = []
+    step = 0
+    generator = forever_iter(train_data)
     try:
-        step = 0
-        generator = forever_iter(train_data)
         while step < max_step:
             time.sleep(0.5)
+            module.train(True)
             for _ in tqdm(range(evaluate_per_steps), ascii=True):
                 step += 1
                 # --------- 训练参数 ------------
-                module.train(True)
                 data, label = next(generator)
                 optimizer.zero_grad()
                 prediction = try_forward(module, data)
@@ -82,9 +83,8 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                 optimizer.step()
                 if scheduler:
                     scheduler.step()
-            module.train(False)
             # ----- 计算校验集的loss和metric
-            loss_value = evaluate(module, valid_data, losses)
+            loss_value = evaluate_fn(module, valid_data, losses)
             init_metric_value = loss_value[metric_loss_id]
             if best_metric_value is None or (init_metric_value != best_metric_value
                                              and is_higher_better == (init_metric_value > best_metric_value)):
@@ -105,7 +105,6 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
         raise KeyboardInterrupt
     finally:
         module.load_state_dict(best_state_dict)
-        module.train(False)
     return best_metric_value, torch.tensor(loss_record, device=loss_record[0].device)
 
 

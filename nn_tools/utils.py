@@ -1,4 +1,3 @@
-# 尽量使用tensor类型传递数据，不保证numpy类型能正确运行
 from functools import wraps
 
 from tqdm import tqdm as _tqdm
