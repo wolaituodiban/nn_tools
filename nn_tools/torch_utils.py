@@ -93,6 +93,7 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                 best_state_dict = deepcopy(module.state_dict())
                 best_step = step
                 best_metric_value = init_metric_value
+                torch.save(module, '{}.checkpoint'.format(step))
             with torch.no_grad():
                 print('step {} train {}: {}; valid '.format(
                     step, type(loss).__name__, torch.tensor(
