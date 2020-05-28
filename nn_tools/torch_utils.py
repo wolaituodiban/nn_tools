@@ -1,4 +1,5 @@
 import math
+import os
 import pickle
 import time
 import traceback
@@ -53,7 +54,8 @@ def evaluate(module: torch.nn.Module, data, metrics: list) -> torch.Tensor:
 
 
 def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, loss, metrics: list, is_higher_better,
-        evaluate_per_steps=None, early_stopping=-1, scheduler=None, init_metric_value=None, evaluate_fn=evaluate):
+        evaluate_per_steps=None, early_stopping=-1, scheduler=None, init_metric_value=None, evaluate_fn=evaluate,
+        checkpoint_dir=None):
     # 状态变量
     print('using {} as training loss, using {}({} is better) as early stopping metric'.format(
         type(loss).__name__, type(metrics[0]).__name__, 'higher' if is_higher_better else 'lower'))
@@ -85,6 +87,8 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                     optimizer.step()
                 if scheduler:
                     scheduler.step()
+            if checkpoint_dir:
+                torch.save(module, os.path.join(checkpoint_dir, '{}.checkpoint'.format(step)))
             # ----- 计算校验集的loss和metric
             metrics_values = evaluate_fn(module, valid_data, metrics)
             init_metric_value = metrics_values[0]
@@ -93,7 +97,7 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                 best_state_dict = deepcopy(module.state_dict())
                 best_step = step
                 best_metric_value = init_metric_value
-                torch.save(module, '{}.checkpoint'.format(step))
+
             with torch.no_grad():
                 print('step {} train {}: {}; valid '.format(
                     step, type(loss).__name__, torch.tensor(
