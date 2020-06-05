@@ -38,7 +38,7 @@ def try_forward(module: torch.nn.Module, data):
         return None
 
 
-def evaluate(module: torch.nn.Module, data, metrics: list) -> torch.Tensor:
+def evaluate(module: torch.nn.Module, data, metrics: list):
     with torch.no_grad():
         module.eval()
         loss_value = [[] for _ in metrics]
@@ -50,12 +50,15 @@ def evaluate(module: torch.nn.Module, data, metrics: list) -> torch.Tensor:
                 a.append(b(*prediction, *label))
         loss_value = [torch.tensor([x for x in array if x is not None], device=data[0].device).mean()
                       for array in loss_value]
-    return torch.tensor(loss_value, device=loss_value[0].device)
+    return [(m.__name__, v) for m, v in zip(metrics, loss_value)]
 
 
 def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, loss, metrics: list, is_higher_better,
         evaluate_per_steps=None, early_stopping=-1, scheduler=None, init_metric_value=None, evaluate_fn=evaluate,
         checkpoint_dir=None):
+    if checkpoint_dir is not None:
+        checkpoint_dir = os.path.join(checkpoint_dir, str(time.time()))
+        os.mkdir(checkpoint_dir)
     # 状态变量
     print('using {} as training loss, using {}({} is better) as early stopping metric'.format(
         type(loss).__name__, type(metrics[0]).__name__, 'higher' if is_higher_better else 'lower'))
@@ -80,18 +83,17 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                 if prediction is None:
                     continue
                 loss_value = loss(*prediction, *label)
-                loss_record.append(loss_value.detach())
+                loss_record.append(float(loss_value.detach()))
                 if loss_value is not None:
-                    device = loss_value.device
                     loss_value.backward()
                     optimizer.step()
                 if scheduler:
                     scheduler.step()
-            if checkpoint_dir:
+            if checkpoint_dir is not None:
                 torch.save(module, os.path.join(checkpoint_dir, '{}.checkpoint'.format(step)))
             # ----- 计算校验集的loss和metric
             metrics_values = evaluate_fn(module, valid_data, metrics)
-            init_metric_value = metrics_values[0]
+            init_metric_value = metrics_values[0][1]
             if best_metric_value is None or (init_metric_value != best_metric_value
                                              and is_higher_better == (init_metric_value > best_metric_value)):
                 best_state_dict = deepcopy(module.state_dict())
@@ -102,8 +104,8 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                 print('step {} train {}: {}; valid '.format(
                     step, type(loss).__name__, torch.tensor(
                         [x for x in loss_record[-evaluate_per_steps:] if x is not None]).mean()), end='')
-            for a, b in zip(metrics_values, metrics):
-                print('{}: {}, '.format(type(b).__name__, a), end='')
+            for a, b in metrics_values:
+                print('{}: {}, '.format(a, b), end='')
             print()
             # ------ 提前停止的策略
             if step - best_step >= early_stopping > 0:
