@@ -50,7 +50,7 @@ def evaluate(module: torch.nn.Module, data, metrics: list):
                 a.append(b(*prediction, *label))
         loss_value = [torch.tensor([x for x in array if x is not None], device=data[0].device).mean()
                       for array in loss_value]
-    return [(m.__name__, v) for m, v in zip(metrics, loss_value)]
+    return [(type(m).__name__, v) for m, v in zip(metrics, loss_value)]
 
 
 def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, loss, metrics: list, is_higher_better,
