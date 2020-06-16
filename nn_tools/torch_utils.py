@@ -93,12 +93,13 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                 torch.save(module, os.path.join(checkpoint_dir, '{}.checkpoint'.format(step)))
             # ----- 计算校验集的loss和metric
             metrics_values = evaluate_fn(module, valid_data, metrics)
-            init_metric_value = metrics_values[0][1]
-            if best_metric_value is None or (init_metric_value != best_metric_value
-                                             and is_higher_better == (init_metric_value > best_metric_value)):
+            metric_value = metrics_values[0][1]
+            if (best_metric_value is None
+                    or metric_value == best_metric_value
+                    or is_higher_better == (metric_value > best_metric_value)):
                 best_state_dict = deepcopy(module.state_dict())
                 best_step = step
-                best_metric_value = init_metric_value
+                best_metric_value = metric_value
 
             with torch.no_grad():
                 print('step {} train {}: {}; valid '.format(
