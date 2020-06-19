@@ -17,33 +17,12 @@ def forever_iter(iterable):
             yield _
 
 
-def try_forward(module: torch.nn.Module, data):
-    # catch module.forward的错误，如果正常运行，返回module(*data)的结果，否则返回None
-    try:
-        pred = module(*data)
-        return pred
-    except KeyboardInterrupt:
-        raise KeyboardInterrupt
-    except Exception as exception:
-        error_info = traceback.format_exc()
-        if 'CUDA out of memory' in error_info:
-            raise exception
-        
-        print('an error occurs!')
-        timestamp = time.time()
-        with open('error_batch_data_{}.pkl'.format(timestamp), 'bw') as file:
-            pickle.dump(data, file)
-        with open('error_batch_traceback_{}.txt'.format(timestamp), 'w') as file:
-            file.write(error_info)
-        return None
-
-
 def evaluate(module: torch.nn.Module, data, metrics: list):
     with torch.no_grad():
         module.eval()
         loss_value = [[] for _ in metrics]
         for data, label in tqdm(data, ascii=True):
-            prediction = try_forward(module, data)
+            prediction = module(*data)
             if prediction is None:
                 continue
             for a, b in zip(loss_value, metrics):
@@ -79,7 +58,7 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                 # --------- 训练参数 ------------
                 data, label = next(generator)
                 optimizer.zero_grad()
-                prediction = try_forward(module, data)
+                prediction = module(*data)
                 if prediction is None:
                     continue
                 loss_value = loss(*prediction, *label)
