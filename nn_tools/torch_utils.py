@@ -40,7 +40,9 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
         os.mkdir(checkpoint_dir)
     # 状态变量
     print('using {} as training loss, using {}({} is better) as early stopping metric'.format(
-        type(loss).__name__, type(metrics[0]).__name__, 'higher' if is_higher_better else 'lower'))
+        type(loss).__name__,
+        metrics[0] if isinstance(metrics[0], str) else type(metrics[0]).__name__,
+        'higher' if is_higher_better else 'lower'))
     evaluate_per_steps = evaluate_per_steps or max_step
 
     best_state_dict = deepcopy(module.state_dict())
@@ -81,12 +83,11 @@ def fit(module: torch.nn.Module, train_data, valid_data, optimizer, max_step, lo
                 best_metric_value = metric_value
 
             with torch.no_grad():
-                print('step {} train {}: {}; valid '.format(
+                print('step {} train {}: {}'.format(
                     step, type(loss).__name__, torch.tensor(
-                        [x for x in loss_record[-evaluate_per_steps:] if x is not None]).mean()), end='')
+                        [x for x in loss_record[-evaluate_per_steps:] if x is not None]).mean()))
             for a, b in metrics_values:
-                print('{}: {}, '.format(a, b), end='')
-            print()
+                print('valid {}: {}'.format(a, b))
             # ------ 提前停止的策略
             if step - best_step >= early_stopping > 0:
                 break
